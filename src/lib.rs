@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 
 pub use client::MainClient;
 pub use bitcoin;
+pub use jsonrpsee;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum WithdrawalBundleStatus {
