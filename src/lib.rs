@@ -1,12 +1,12 @@
 mod client;
-    use bitcoin::consensus::{Decodable, Encodable};
 use base64::Engine as _;
+use bitcoin::consensus::{Decodable, Encodable};
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-pub use client::MainClient;
 pub use bitcoin;
+pub use client::MainClient;
 pub use jsonrpsee;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -35,15 +35,21 @@ pub struct Output {
 }
 
 impl Drivechain {
-    pub async fn verify_bmm(&self, prev_main_hash: &bitcoin::BlockHash, bmm_bytes: &bitcoin::BlockHash) -> Result<(), Error> {
+    pub async fn verify_bmm(
+        &self,
+        prev_main_hash: &bitcoin::BlockHash,
+        bmm_bytes: &bitcoin::BlockHash,
+    ) -> Result<(), Error> {
         let main_hash = self
             .client
-            .getblock(&prev_main_hash, None)
+            .getblock(prev_main_hash, None)
             .await?
             .nextblockhash
-            .ok_or(Error::NoNextBlock { prev_main_hash: *prev_main_hash })?;
+            .ok_or(Error::NoNextBlock {
+                prev_main_hash: *prev_main_hash,
+            })?;
         self.client
-            .verifybmm(&main_hash, &bmm_bytes, self.sidechain_number)
+            .verifybmm(&main_hash, bmm_bytes, self.sidechain_number)
             .await?;
         Ok(())
     }
@@ -84,7 +90,13 @@ impl Drivechain {
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<(HashMap<bitcoin::OutPoint, Output>, Option<bitcoin::BlockHash>), Error> {
+    ) -> Result<
+        (
+            HashMap<bitcoin::OutPoint, Output>,
+            Option<bitcoin::BlockHash>,
+        ),
+        Error,
+    > {
         let deposits = self
             .client
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
