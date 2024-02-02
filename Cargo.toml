@@ -6,14 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jsonrpsee = { version = "0.19.0", features = ["client", "macros"] }
+base64 = "0.21.2"
 bitcoin = { version = "0.30.1", features = ["serde"] }
+hex = "0.4.3"
+http = "0.2.9"
+jsonrpsee = { version = "0.19.0", features = ["client", "macros"] }
 serde = { version = "1.0.183", features = ["derive"] }
 serde_json = "1.0.104"
-hex = "0.4.3"
 thiserror = "1.0.44"
-http = "0.2.9"
-base64 = "0.21.2"
+tokio = { version = "1.35.1", default-features = false, features = ["time"]}
 
 [features]
 tracing = ["jsonrpsee/tracing"]

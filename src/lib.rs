@@ -39,15 +39,19 @@ impl Drivechain {
         &self,
         prev_main_hash: &bitcoin::BlockHash,
         bmm_bytes: &bitcoin::BlockHash,
+        poll_interval: std::time::Duration,
     ) -> Result<(), Error> {
-        let main_hash = self
-            .client
-            .getblock(prev_main_hash, None)
-            .await?
-            .nextblockhash
-            .ok_or(Error::NoNextBlock {
-                prev_main_hash: *prev_main_hash,
-            })?;
+        let main_hash = loop {
+            if let Some(next_block_hash) = self
+                .client
+                .getblock(prev_main_hash, None)
+                .await?
+                .nextblockhash
+            {
+                break next_block_hash;
+            }
+            tokio::time::sleep(poll_interval).await;
+        };
         self.client
             .verifybmm(&main_hash, bmm_bytes, self.sidechain_number)
             .await?;
