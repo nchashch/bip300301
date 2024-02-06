@@ -1,28 +1,33 @@
-use bitcoin::amount::serde::SerdeAmount;
+use bitcoin::{
+    amount::serde::SerdeAmount,
+    hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash},
+    BlockHash,
+};
 use jsonrpsee::proc_macros::rpc;
+use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
     hash: bitcoin::Txid,
     nblocksleft: usize,
     nworkscore: usize,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SpentWithdrawal {
     pub nsidechain: u8,
     pub hash: bitcoin::Txid,
     pub hashblock: bitcoin::BlockHash,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FailedWithdrawal {
     pub nsidechain: u8,
     pub hash: bitcoin::Txid,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Vote {
     Upvote,
@@ -30,7 +35,7 @@ pub enum Vote {
     Downvote,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
     pub hash: bitcoin::BlockHash,
@@ -53,7 +58,7 @@ pub struct Block {
     pub nextblockhash: Option<bitcoin::BlockHash>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Deposit {
     pub hashblock: bitcoin::BlockHash,
@@ -61,6 +66,44 @@ pub struct Deposit {
     pub ntx: usize,
     pub strdest: String,
     pub txhex: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainInfo {
+    #[serde(rename = "title")]
+    pub name: String,
+    #[serde(alias = "nversion")]
+    pub version: i32,
+    pub description: String,
+    #[serde(alias = "hashid1", alias = "hashID1")]
+    pub hash_id_1: Sha256Hash,
+    #[serde(alias = "hashid2", alias = "hashID2")]
+    pub hash_id_2: Ripemd160Hash,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SidechainId(pub u8);
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainProposal {
+    #[serde(rename = "nSidechain")]
+    pub sidechain_id: SidechainId,
+    #[serde(flatten)]
+    pub info: SidechainInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainActivationStatus {
+    #[serde(rename = "title")]
+    pub name: String,
+    pub description: String,
+    #[serde(alias = "nage")]
+    pub age: u32,
+    // TODO: this needs a better name
+    #[serde(alias = "nfail")]
+    pub fail: u32,
 }
 
 #[rpc(client)]
@@ -123,12 +166,23 @@ pub trait Main {
     #[method(name = "generate")]
     async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
+    #[method(name = "generatetoaddress")]
+    async fn generate_to_address(
+        &self,
+        n_blocks: u32,
+        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<Vec<BlockHash>, jsonrpsee::core::Error>;
+
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
         &self,
         account: &str,
         address_type: &str,
     ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
+    #[method(name = "countsidechaindeposits")]
+    async fn count_sidechain_deposits(&self, nsidechain: u8)
+        -> Result<u32, jsonrpsee::core::Error>;
 
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(
@@ -138,6 +192,27 @@ pub trait Main {
         amount: AmountBtc,
         fee: AmountBtc,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "createsidechainproposal")]
+    async fn create_sidechain_proposal(
+        &self,
+        nsidechain: u8,
+        sidechain_name: &str,
+        sidechain_description: &str,
+    ) -> Result<SidechainProposal, jsonrpsee::core::Error>;
+
+    #[method(name = "listactivesidechains")]
+    async fn list_active_sidechains(
+        &self,
+    ) -> Result<Vec<serde_json::Value>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechainproposals")]
+    async fn list_sidechain_proposals(&self) -> Result<Vec<SidechainInfo>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechainactivationstatus")]
+    async fn list_sidechain_activation_status(
+        &self,
+    ) -> Result<Vec<SidechainActivationStatus>, jsonrpsee::core::Error>;
 }
 
 // Arguments:
@@ -179,7 +254,7 @@ impl DerefMut for AmountBtc {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for AmountBtc {
+impl<'de> Deserialize<'de> for AmountBtc {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -188,7 +263,7 @@ impl<'de> serde::Deserialize<'de> for AmountBtc {
     }
 }
 
-impl serde::Serialize for AmountBtc {
+impl Serialize for AmountBtc {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
