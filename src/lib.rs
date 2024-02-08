@@ -1,9 +1,13 @@
-mod client;
+use std::{collections::HashMap, net::SocketAddr};
+
 use base64::Engine as _;
-use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::{
+    consensus::{Decodable, Encodable},
+    Amount,
+};
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
-use std::collections::HashMap;
-use std::net::SocketAddr;
+
+mod client;
 
 pub use bitcoin;
 pub use client::MainClient;
@@ -39,15 +43,19 @@ impl Drivechain {
         &self,
         prev_main_hash: &bitcoin::BlockHash,
         bmm_bytes: &bitcoin::BlockHash,
+        poll_interval: std::time::Duration,
     ) -> Result<(), Error> {
-        let main_hash = self
-            .client
-            .getblock(prev_main_hash, None)
-            .await?
-            .nextblockhash
-            .ok_or(Error::NoNextBlock {
-                prev_main_hash: *prev_main_hash,
-            })?;
+        let main_hash = loop {
+            if let Some(next_block_hash) = self
+                .client
+                .getblock(prev_main_hash, None)
+                .await?
+                .nextblockhash
+            {
+                break next_block_hash;
+            }
+            tokio::time::sleep(poll_interval).await;
+        };
         self.client
             .verifybmm(&main_hash, bmm_bytes, self.sidechain_number)
             .await?;
@@ -102,7 +110,7 @@ impl Drivechain {
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
             .await?;
         let mut last_block_hash = None;
-        let mut last_total = 0;
+        let mut last_total = Amount::ZERO;
         let mut outputs = HashMap::new();
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
@@ -128,7 +136,7 @@ impl Drivechain {
             last_block_hash = Some(deposit.hashblock);
             let output = Output {
                 address: deposit.strdest.clone(),
-                value,
+                value: value.to_sat(),
             };
             outputs.insert(outpoint, output);
         }
@@ -183,7 +191,7 @@ pub enum Error {
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("bitcoin hex error")]
-    BitcoinHex(#[from] bitcoin::hashes::hex::Error),
+    BitcoinHex(#[from] hex_conservative::HexToArrayError),
     #[error("hex error")]
     Hex(#[from] hex::FromHexError),
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
